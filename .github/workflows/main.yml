@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main", "master" ]
   schedule:
-    - cron: '0 3 * * 0' # تشغيل دورة الأتمتة والتقارير أسبوعياً كل يوم أحد
+    - cron: '0 3 * * 0' # تشغيل الأتمتة والتقارير أسبوعياً كل يوم أحد
   workflow_dispatch:
 
 jobs:
@@ -113,7 +113,7 @@ jobs:
           }
           EOF
 
-          # 4. كتابة الكود البرمجي الكامل والجامع لكافة الأنظمة في ملف واحد Application.kt
+          # 4. كتابة الكود البرمجي الكامل والمصحح الخالي من أخطاء الـ String Interpolation وبدون Telegram
           cat << 'EOF' > src/main/kotlin/com/aromaintel/Application.kt
           package com.aromaintel
 
@@ -154,10 +154,8 @@ jobs:
               val dbUser: String = System.getenv("DB_USER") ?: "postgres"
               val dbPassword: String = System.getenv("DB_PASSWORD") ?: "postgres_password_123"
               val aiBaseUrl: String = System.getenv("AI_BASE_URL") ?: "https://api.openai.com/v1"
-              val aiApiKey: String = System.getenv("AI_API_KEY") ?: ""
+              val aiApiKey: String = System.getenv("sk-vJV0RzqHewS6xyz4d1DfdF4Yx1oct7DDQ13UWhLN0tiX25Le") ?: ""
               val aiModel: String = System.getenv("AI_MODEL") ?: "gpt-4o-mini"
-              val telegramBotToken: String = System.getenv("TELEGRAM_BOT_TOKEN") ?: ""
-              val telegramChatId: String = System.getenv("TELEGRAM_CHAT_ID") ?: ""
           }
 
           // ==================== 2. DATABASE SCHEMA ====================
@@ -260,9 +258,9 @@ jobs:
                       return "Analysis summary (AI_API_KEY not configured): Positive demand trajectory observed across traditional cold-pressed botanicals, herbal infusions, and pure raw honey."
                   }
                   return runCatching {
-                      val response = httpClient.post("${Config.aiBaseUrl.trimEnd('/')}/chat/completions") {
+                      val response = httpClient.post(Config.aiBaseUrl.trimEnd('/') + "/chat/completions") {
                           contentType(ContentType.Application.Json)
-                          header("Authorization", "Bearer ${Config.aiApiKey}")
+                          header("Authorization", "Bearer " + Config.aiApiKey)
                           setBody(OpenAiChatRequest(
                               model = Config.aiModel,
                               messages = listOf(
@@ -274,7 +272,7 @@ jobs:
                       val res = response.body<OpenAiChatResponse>()
                       res.choices.firstOrNull()?.message?.content ?: "Empty AI response"
                   }.getOrElse {
-                      logger.error("AI execution error: ${it.message}")
+                      logger.error("AI execution error: " + it.message)
                       "Heuristic Market Insight: Rising interest identified in rosemary extracts, black seed, and organic mountain honey."
                   }
               }
@@ -284,9 +282,9 @@ jobs:
           class BusinessDiscoveryAgent {
               suspend fun discoverAndDeduplicate(country: String, city: String, category: String): Int {
                   val candidates = listOf(
-                      Triple("Al-Kawthar Traditional Herbalist", "+213555112233", "Rue Didouche Mourad, $city"),
-                      Triple("Rawda Natural Honey & Herbs", "+213555445566", "Boulevard Zighout Youcef, $city"),
-                      Triple("Al-Shifa Cold Pressed Oils", "+213555778899", "Place des Martyrs, $city")
+                      Triple("Al-Kawthar Traditional Herbalist", "+213555112233", "Rue Didouche Mourad, " + city),
+                      Triple("Rawda Natural Honey & Herbs", "+213555445566", "Boulevard Zighout Youcef, " + city),
+                      Triple("Al-Shifa Cold Pressed Oils", "+213555778899", "Place des Martyrs, " + city)
                   )
 
                   var count = 0
@@ -314,7 +312,7 @@ jobs:
                                   it[latitude] = 36.7538 + (count * 0.005)
                                   it[longitude] = 3.0588 + (count * 0.005)
                                   it[this.phone] = phone
-                                  it[website] = "https://example.com/$normName"
+                                  it[website] = "https://example.com/" + normName
                                   it[rating] = 4.6 + (count * 0.1)
                                   it[reviewsCount] = 45 + (count * 15)
                                   it[confidenceScore] = 0.85
@@ -387,35 +385,26 @@ jobs:
               suspend fun generateWeeklyReport(): String {
                   val (bizCount, topTrends) = dbQuery {
                       val count = BusinessesTable.selectAll().count()
-                      val trends = TrendsTable.selectAll().limit(5).map { "${it[TrendsTable.query]} (+${it[TrendsTable.growthPercentage]}%)" }
+                      val trends = TrendsTable.selectAll().limit(5).map { it[TrendsTable.query] + " (+" + it[TrendsTable.growthPercentage] + "%)" }
                       Pair(count, trends)
                   }
 
                   val systemPrompt = "You are a Market Intelligence Analyst for herbalists and botanical wellness retailers. Strictly adhere to facts, avoiding medical diagnostic claims."
-                  val userPrompt = "Total verified businesses: $bizCount. Top rising botanicals: ${topTrends.joinToString()}. Provide an executive market summary and commercial recommendations for herbal retailers."
+                  val userPrompt = "Total verified businesses: " + bizCount + ". Top rising botanicals: " + topTrends.joinToString() + ". Provide an executive market summary and commercial recommendations for herbal retailers."
                   val aiSummary = aiEngine.generateAnalysis(userPrompt, systemPrompt)
 
                   val reportDate = Clock.System.now().toString()
-                  val md = """
-                      # WEEKLY MARKET INTELLIGENCE REPORT
-                      *Date: $reportDate*
-                      
-                      ## 1. BUSINESS DISCOVERY
-                      - Tracked Retailers: $bizCount verified establishments
-                      
-                      ## 2. TOP RISING INGREDIENTS
-                      ${topTrends.mapIndexed { idx, s -> "${idx + 1}. $s" }.joinToString("\n")}
-                      
-                      ## 3. AI STRATEGIC SUMMARY
-                      $aiSummary
-                  """.trimIndent()
+                  val md = "# WEEKLY MARKET INTELLIGENCE REPORT\n*Date: " + reportDate + "*\n\n## 1. BUSINESS DISCOVERY\n- Tracked Retailers: " + bizCount + " verified establishments\n\n## 2. TOP RISING INGREDIENTS\n" +
+                          topTrends.mapIndexed { idx, s -> (idx + 1).toString() + ". " + s }.joinToString("\n") +
+                          "\n\n## 3. AI STRATEGIC SUMMARY\n" + aiSummary
 
-                  val html = "<div><h2>WEEKLY MARKET INTELLIGENCE REPORT</h2><p>Tracked Retailers: <b>$bizCount</b></p><ul>${topTrends.joinToString("") { "<li>$it</li>" }}</ul><p>$aiSummary</p></div>"
+                  val html = "<div><h2>WEEKLY MARKET INTELLIGENCE REPORT</h2><p>Tracked Retailers: <b>" + bizCount + "</b></p><ul>" +
+                          topTrends.joinToString("") { "<li>" + it + "</li>" } + "</ul><p>" + aiSummary + "</p></div>"
 
                   dbQuery {
                       ReportsTable.insert {
                           it[id] = UUID.randomUUID()
-                          it[title] = "Weekly Report - $reportDate"
+                          it[title] = "Weekly Report - " + reportDate
                           it[contentMarkdown] = md
                           it[contentHtml] = html
                           it[createdAt] = reportDate
@@ -425,32 +414,16 @@ jobs:
               }
           }
 
-          // ==================== 6. TELEGRAM NOTIFIER ====================
-          class TelegramBotService(private val httpClient: HttpClient) {
-              private val logger = LoggerFactory.getLogger(TelegramBotService::class.java)
-
-              suspend fun notifyChannel(text: String) {
-                  if (Config.telegramBotToken.isBlank() || Config.telegramChatId.isBlank()) return
-                  runCatching {
-                      httpClient.post("https://api.telegram.org/bot${Config.telegramBotToken}/sendMessage") {
-                          contentType(ContentType.Application.Json)
-                          setBody(mapOf("chat_id" to Config.telegramChatId, "text" to text, "parse_mode" to "Markdown"))
-                      }
-                  }.onFailure { logger.error("Telegram error: ${it.message}") }
-              }
-          }
-
-          // ==================== 7. AUTONOMOUS SCHEDULER ====================
+          // ==================== 6. AUTONOMOUS SCHEDULER ====================
           class AutomationScheduler(
               private val discovery: BusinessDiscoveryAgent,
               private val trends: TrendIntelligenceAgent,
               private val health: HealthSearchTopicsAgent,
-              private val reports: ReportService,
-              private val telegram: TelegramBotService
+              private val reports: ReportService
           ) {
               fun start(scope: CoroutineScope) {
                   scope.launch(Dispatchers.IO) {
-                      // تشغيل أولي عند بدء التشغيل
+                      // تشغيل أولي
                       discovery.discoverAndDeduplicate("Algeria", "Algiers", "Herbalist")
                       trends.collectTrends("Algeria")
                       health.collectTopics("Algeria")
@@ -459,14 +432,14 @@ jobs:
                           delay(24.hours)
                           discovery.discoverAndDeduplicate("Algeria", "Algiers", "Herbalist")
                           trends.collectTrends("Algeria")
-                          val report = reports.generateWeeklyReport()
-                          telegram.notifyChannel(report.take(3000))
+                          reports.generateWeeklyReport()
                       }
                   }
               }
           }
 
-          // ==================== 8. EMBEDDED DASHBOARD HTML ====================
+          // ==================== 7. EMBEDDED DASHBOARD HTML ====================
+          // تم استبدال الـ JS Template Literals لتفادي أخطاء Kotlin String Interpolation نهائياً
           val DASHBOARD_HTML = """
           <!DOCTYPE html>
           <html lang="ar" dir="rtl">
@@ -484,13 +457,13 @@ jobs:
                       <span class="text-2xl">🌿</span>
                       <h1 class="text-xl font-bold text-emerald-400">AromaIntel Platform</h1>
                   </div>
-                  <button onclick="fetch('/api/reports/generate',{method:'POST'}).then(()=>location.reload())" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg transition">توليد تقرير أسبوعي AI</button>
+                  <button onclick="fetch('/api/reports/generate',{method:'POST'}).then(function(){ location.reload(); })" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg transition">توليد تقرير أسبوعي AI</button>
               </header>
               <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800"><p class="text-xs text-slate-400">المحلات المكتشفة</p><h2 id="totalBiz" class="text-3xl font-bold text-white mt-1">--</h2></div>
                       <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800"><p class="text-xs text-slate-400">المنتج الأكثر نمواً</p><h2 id="topTrend" class="text-2xl font-bold text-amber-400 mt-1">--</h2></div>
-                      <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800"><p class="text-xs text-slate-400">حالة الأتمتة</p><h2 class="text-3xl font-bold text-emerald-400 mt-1">نشطة ✅</h2></div>
+                      <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800"><p class="text-xs text-slate-400">حالة الذكاء الاصطناعي</p><h2 class="text-3xl font-bold text-emerald-400 mt-1">نشط ومحدث ✅</h2></div>
                   </div>
                   <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800"><h3 class="font-bold mb-4">📈 تريندات الأعشاب والمنتجات الطبيعية</h3><div class="h-64"><canvas id="chart"></canvas></div></div>
@@ -503,20 +476,49 @@ jobs:
               </main>
               <script>
                   async function init() {
-                      const [biz, trends] = await Promise.all([fetch('/api/businesses').then(r=>r.json()), fetch('/api/trends').then(r=>r.json())]);
+                      const bizRes = await fetch('/api/businesses');
+                      const biz = await bizRes.json();
+                      const trendsRes = await fetch('/api/trends');
+                      const trends = await trendsRes.json();
+
                       document.getElementById('totalBiz').innerText = biz.length;
-                      document.getElementById('bizTable').innerHTML = biz.map(b => `<tr class="border-b border-slate-800/50"><td class="p-3 font-bold">${b.name}</td><td class="p-3">${b.city}</td><td class="p-3 font-mono">${b.phone||'N/A'}</td><td class="p-3 text-emerald-400">${(b.confidenceScore*100).toFixed(0)}%</td></tr>`).join('');
+                      
+                      var rows = '';
+                      for (var i = 0; i < biz.length; i++) {
+                          var b = biz[i];
+                          var phoneVal = b.phone ? b.phone : "N/A";
+                          var score = Math.round(b.confidenceScore * 100) + "%";
+                          rows += '<tr class="border-b border-slate-800/50">' +
+                              '<td class="p-3 font-bold">' + b.name + '</td>' +
+                              '<td class="p-3">' + b.city + '</td>' +
+                              '<td class="p-3 font-mono">' + phoneVal + '</td>' +
+                              '<td class="p-3 text-emerald-400">' + score + '</td>' +
+                              '</tr>';
+                      }
+                      document.getElementById('bizTable').innerHTML = rows;
+
                       if(trends.length > 0) {
                           document.getElementById('topTrend').innerText = trends[0].query + ' (' + trends[0].growthPercentage + '%)';
                           new Chart(document.getElementById('chart'), {
                               type: 'bar',
-                              data: { labels: trends.map(t=>t.query), datasets: [{ label: 'مؤشر الاهتمام', data: trends.map(t=>t.interestScore), backgroundColor: '#10b981' }] },
+                              data: {
+                                  labels: trends.map(function(t){ return t.query; }),
+                                  datasets: [{
+                                      label: 'مؤشر الاهتمام',
+                                      data: trends.map(function(t){ return t.interestScore; }),
+                                      backgroundColor: '#10b981'
+                                  }]
+                              },
                               options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#fff' } } } }
                           });
                       }
                       const map = L.map('map').setView([36.7538, 3.0588], 12);
                       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-                      biz.forEach(b => { if(b.latitude&&b.longitude) L.marker([b.latitude, b.longitude]).addTo(map).bindPopup(b.name); });
+                      biz.forEach(function(b) {
+                          if(b.latitude && b.longitude) {
+                              L.marker([b.latitude, b.longitude]).addTo(map).bindPopup(b.name);
+                          }
+                      });
                   }
                   init();
               </script>
@@ -524,7 +526,7 @@ jobs:
           </html>
           """.trimIndent()
 
-          // ==================== 9. MAIN APP & API ROUTES ====================
+          // ==================== 8. MAIN APP & API ROUTES ====================
           fun main() {
               embeddedServer(Netty, port = Config.port) { module() }.start(wait = true)
           }
@@ -532,7 +534,7 @@ jobs:
           fun Application.module() {
               val hikariConfig = HikariConfig().apply {
                   driverClassName = "org.postgresql.Driver"
-                  jdbcUrl = "jdbc:postgresql://${Config.dbHost}:${Config.dbPort}/${Config.dbName}"
+                  jdbcUrl = "jdbc:postgresql://" + Config.dbHost + ":" + Config.dbPort + "/" + Config.dbName
                   username = Config.dbUser
                   password = Config.dbPassword
                   maximumPoolSize = 5
@@ -564,10 +566,9 @@ jobs:
               val trends = TrendIntelligenceAgent()
               val health = HealthSearchTopicsAgent()
               val reports = ReportService(aiEngine)
-              val telegram = TelegramBotService(client)
 
               val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-              AutomationScheduler(discovery, trends, health, reports, telegram).start(scope)
+              AutomationScheduler(discovery, trends, health, reports).start(scope)
 
               routing {
                   get("/") { call.respondText(DASHBOARD_HTML, ContentType.Text.Html) }
@@ -612,16 +613,19 @@ jobs:
           }
           EOF
 
-      - name: Build Application with Gradle
+      - name: Generate Gradle Wrapper & Build Application
         run: |
-          gradle build --no-daemon
+          gradle wrapper --gradle-version 8.10
+          chmod +x gradlew
+          ./gradlew build --no-daemon
         env:
           DB_HOST: localhost
           DB_PORT: 5432
           DB_NAME: aromaintel_db
           DB_USER: postgres
           DB_PASSWORD: postgres_password_123
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
 
       - name: Verify Artifact & Deployment Readiness
         run: |
-          echo "Build finished successfully. Platform compiled into executable state."
+          echo "Build completed successfully without any compilation errors. Platform compiled into executable state."
