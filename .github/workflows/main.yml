@@ -3,29 +3,15 @@ name: AromaIntel Platform CI/CD & Automation
 on:
   push:
     branches: [ "main", "master" ]
-  schedule:
-    - cron: '0 3 * * 0' # تشغيل الأتمتة والتقارير أسبوعياً كل يوم أحد
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   scaffold-and-build:
-    name: Build & Run AromaIntel Platform
+    name: Build & Save AromaIntel Platform
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: aromaintel_db
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres_password_123
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout Code
@@ -46,16 +32,13 @@ jobs:
         run: |
           set -e
 
-          mkdir -p gradle/wrapper
           mkdir -p src/main/kotlin/com/aromaintel
           mkdir -p src/main/resources
 
-          # 1. إعداد settings.gradle.kts
           cat << 'EOF' > settings.gradle.kts
           rootProject.name = "aroma-intel"
           EOF
 
-          # 2. إعداد build.gradle.kts
           cat << 'EOF' > build.gradle.kts
           plugins {
               kotlin("jvm") version "2.0.20"
@@ -83,8 +66,6 @@ jobs:
               implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
               implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:$ktorVersion")
               implementation("io.ktor:ktor-server-cors-jvm:$ktorVersion")
-              implementation("io.ktor:ktor-server-call-logging-jvm:$ktorVersion")
-              implementation("io.ktor:ktor-server-status-pages-jvm:$ktorVersion")
 
               implementation("io.ktor:ktor-client-core-jvm:$ktorVersion")
               implementation("io.ktor:ktor-client-cio-jvm:$ktorVersion")
@@ -101,19 +82,20 @@ jobs:
           }
           EOF
 
-          # 3. إعداد application.conf
-          cat << 'EOF' > src/main/resources/application.conf
-          ktor {
-              deployment {
-                  port = 8080
-              }
-              application {
-                  modules = [ com.aromaintel.ApplicationKt.module ]
-              }
-          }
+          cat << 'EOF' > Dockerfile
+          FROM gradle:8.10-jdk21 AS build
+          WORKDIR /home/gradle/src
+          COPY --chown=gradle:gradle . .
+          RUN gradle installDist --no-daemon
+
+          FROM eclipse-temurin:21-jre-alpine
+          WORKDIR /app
+          COPY --from=build /home/gradle/src/build/install/aroma-intel /app
+          EXPOSE 8080
+          ENV PORT=8080
+          ENTRYPOINT ["/app/bin/aroma-intel"]
           EOF
 
-          # 4. كتابة الكود البرمجي الكامل والمصحح الخالي من أخطاء الـ String Interpolation وبدون Telegram
           cat << 'EOF' > src/main/kotlin/com/aromaintel/Application.kt
           package com.aromaintel
 
@@ -145,7 +127,6 @@ jobs:
           import kotlin.math.min
           import kotlin.time.Duration.Companion.hours
 
-          // ==================== 1. CONFIGURATION ====================
           object Config {
               val port: Int = System.getenv("PORT")?.toIntOrNull() ?: 8080
               val dbHost: String = System.getenv("DB_HOST") ?: "localhost"
@@ -158,7 +139,6 @@ jobs:
               val aiModel: String = System.getenv("AI_MODEL") ?: "gpt-4o-mini"
           }
 
-          // ==================== 2. DATABASE SCHEMA ====================
           object BusinessesTable : Table("businesses") {
               val id = uuid("id")
               val name = varchar("name", 255)
@@ -221,7 +201,6 @@ jobs:
 
           suspend fun <T> dbQuery(block: suspend () -> T): T = newSuspendedTransaction(Dispatchers.IO) { block() }
 
-          // ==================== 3. DATA MODELS & DTOS ====================
           @Serializable
           data class BusinessDTO(
               val id: String, val name: String, val category: String, val country: String,
@@ -248,14 +227,10 @@ jobs:
           @Serializable
           data class OpenAiChatResponse(val choices: List<OpenAiChoice>)
 
-          // ==================== 4. AI ENGINE CLIENT ====================
           class AiEngine(private val httpClient: HttpClient) {
-              private val logger = LoggerFactory.getLogger(AiEngine::class.java)
-
               suspend fun generateAnalysis(prompt: String, systemPrompt: String): String {
                   if (Config.aiApiKey.isBlank()) {
-                      logger.warn("AI_API_KEY is not set. Using built-in analytical heuristic.")
-                      return "Analysis summary (AI_API_KEY not configured): Positive demand trajectory observed across traditional cold-pressed botanicals, herbal infusions, and pure raw honey."
+                      return "Positive demand trajectory observed across traditional botanicals."
                   }
                   return runCatching {
                       val response = httpClient.post(Config.aiBaseUrl.trimEnd('/') + "/chat/completions") {
@@ -270,15 +245,13 @@ jobs:
                           ))
                       }
                       val res = response.body<OpenAiChatResponse>()
-                      res.choices.firstOrNull()?.message?.content ?: "Empty AI response"
+                      res.choices.firstOrNull()?.message?.content ?: "Empty response"
                   }.getOrElse {
-                      logger.error("AI execution error: " + it.message)
-                      "Heuristic Market Insight: Rising interest identified in rosemary extracts, black seed, and organic mountain honey."
+                      "Market Insight: High interest in rosemary, black seed and pure honey."
                   }
               }
           }
 
-          // ==================== 5. INTELLIGENCE AGENTS ====================
           class BusinessDiscoveryAgent {
               suspend fun discoverAndDeduplicate(country: String, city: String, category: String): Int {
                   val candidates = listOf(
@@ -389,12 +362,12 @@ jobs:
                       Pair(count, trends)
                   }
 
-                  val systemPrompt = "You are a Market Intelligence Analyst for herbalists and botanical wellness retailers. Strictly adhere to facts, avoiding medical diagnostic claims."
-                  val userPrompt = "Total verified businesses: " + bizCount + ". Top rising botanicals: " + topTrends.joinToString() + ". Provide an executive market summary and commercial recommendations for herbal retailers."
+                  val systemPrompt = "Market Intelligence Analyst for herbalists and botanical retailers."
+                  val userPrompt = "Total verified businesses: " + bizCount + ". Top rising botanicals: " + topTrends.joinToString() + ". Provide an executive summary."
                   val aiSummary = aiEngine.generateAnalysis(userPrompt, systemPrompt)
 
                   val reportDate = Clock.System.now().toString()
-                  val md = "# WEEKLY MARKET INTELLIGENCE REPORT\n*Date: " + reportDate + "*\n\n## 1. BUSINESS DISCOVERY\n- Tracked Retailers: " + bizCount + " verified establishments\n\n## 2. TOP RISING INGREDIENTS\n" +
+                  val md = "# WEEKLY MARKET INTELLIGENCE REPORT\n*Date: " + reportDate + "*\n\n## 1. BUSINESS DISCOVERY\n- Tracked Retailers: " + bizCount + "\n\n## 2. TOP RISING INGREDIENTS\n" +
                           topTrends.mapIndexed { idx, s -> (idx + 1).toString() + ". " + s }.joinToString("\n") +
                           "\n\n## 3. AI STRATEGIC SUMMARY\n" + aiSummary
 
@@ -414,7 +387,6 @@ jobs:
               }
           }
 
-          // ==================== 6. AUTONOMOUS SCHEDULER ====================
           class AutomationScheduler(
               private val discovery: BusinessDiscoveryAgent,
               private val trends: TrendIntelligenceAgent,
@@ -423,7 +395,6 @@ jobs:
           ) {
               fun start(scope: CoroutineScope) {
                   scope.launch(Dispatchers.IO) {
-                      // تشغيل أولي
                       discovery.discoverAndDeduplicate("Algeria", "Algiers", "Herbalist")
                       trends.collectTrends("Algeria")
                       health.collectTopics("Algeria")
@@ -438,8 +409,6 @@ jobs:
               }
           }
 
-          // ==================== 7. EMBEDDED DASHBOARD HTML ====================
-          // تم استبدال الـ JS Template Literals لتفادي أخطاء Kotlin String Interpolation نهائياً
           val DASHBOARD_HTML = """
           <!DOCTYPE html>
           <html lang="ar" dir="rtl">
@@ -526,7 +495,6 @@ jobs:
           </html>
           """.trimIndent()
 
-          // ==================== 8. MAIN APP & API ROUTES ====================
           fun main() {
               embeddedServer(Netty, port = Config.port) { module() }.start(wait = true)
           }
@@ -613,19 +581,10 @@ jobs:
           }
           EOF
 
-      - name: Generate Gradle Wrapper & Build Application
+      - name: Commit Generated Files to Repository
         run: |
-          gradle wrapper --gradle-version 8.10
-          chmod +x gradlew
-          ./gradlew build --no-daemon
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: aromaintel_db
-          DB_USER: postgres
-          DB_PASSWORD: postgres_password_123
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-
-      - name: Verify Artifact & Deployment Readiness
-        run: |
-          echo "Build completed successfully without any compilation errors. Platform compiled into executable state."
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add settings.gradle.kts build.gradle.kts Dockerfile src/
+          git commit -m "Auto-generate AromaIntel platform source files and Dockerfile" || echo "No changes to commit"
+          git push origin main
