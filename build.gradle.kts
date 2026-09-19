@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.tirorda.ai"
-version = "3.0.0"
+version = "3.1.0"
 
 application {
     mainClass.set("com.tirorda.ai.ApplicationKt")
