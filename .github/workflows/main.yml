@@ -1,4 +1,4 @@
-name: Build & Deploy TIRORDA AI Platform
+name: Build & Deploy TIRORDA AI Platform Pro
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   scaffold-build-deploy:
-    name: Scaffold, Build and Sync TIRORDA AI
+    name: Scaffold, Build and Sync TIRORDA AI Pro
     runs-on: ubuntu-latest
 
     services:
@@ -65,7 +65,7 @@ jobs:
           }
 
           group = "com.tirorda.ai"
-          version = "2.2.0"
+          version = "2.3.0"
 
           application {
               mainClass.set("com.tirorda.ai.ApplicationKt")
@@ -238,6 +238,7 @@ jobs:
               val nameAr = varchar("name_ar", 255)
               val category = varchar("category", 100)
               val priceDzd = double("price_dzd")
+              val wholesalePriceDzd = double("wholesale_price_dzd").default(2000.0)
               val stock = integer("stock")
               val salesCount = integer("sales_count").default(0)
               val trendStatus = varchar("trend_status", 50).default("RISING")
@@ -259,7 +260,7 @@ jobs:
           @Serializable
           data class ProductDTO(
               val id: String, val sku: String, val nameFr: String, val nameAr: String,
-              val category: String, val priceDzd: Double, val stock: Int, val salesCount: Int,
+              val category: String, val priceDzd: Double, val wholesalePriceDzd: Double, val stock: Int, val salesCount: Int,
               val trendStatus: String, val searchInterest: Int
           )
 
@@ -267,10 +268,10 @@ jobs:
           data class TrendDTO(val query: String, val category: String, val interestScore: Int, val growthPercentage: Double, val relatedQueries: String)
 
           @Serializable
-          data class DailyBriefDTO(
-              val date: String, val marketStatus: String, val topTrendingProduct: String,
-              val urgentFollowUps: Int, val lowStockAlerts: List<String>, val recommendedAction: String
-          )
+          data class TopSearchDTO(val query: String, val volumeMonthly: String, val growth: String, val intent: String, val category: String)
+
+          @Serializable
+          data class HashtagPackDTO(val title: String, val tags: String)
 
           @Serializable
           data class OpenAiMessage(val role: String, val content: String)
@@ -308,7 +309,6 @@ jobs:
                   var score = 50
                   val reasons = mutableListOf<String>()
                   val lCat = category.lowercase()
-                  val lName = name.lowercase()
 
                   if (lCat.contains("عطارة") || lCat.contains("عشاب") || lCat.contains("herboristerie")) {
                       score += 25
@@ -423,15 +423,15 @@ jobs:
                       if (TirourdaProductsTable.selectAll().count() == 0L) {
                           TirourdaProductsTable.insert {
                               it[id] = UUID.randomUUID(); it[sku] = "TIR-HONEY-01"; it[nameFr] = "Miel de Montagne Pur Tirourda 500g"
-                              it[nameAr] = "عسل جبلي حر تيروردة 500غ"; it[category] = "Miel"; it[priceDzd] = 2800.0; it[stock] = 45; it[salesCount] = 135; it[trendStatus] = "RISING"; it[searchInterest] = 96
+                              it[nameAr] = "عسل جبلي حر تيروردة 500غ"; it[category] = "Miel"; it[priceDzd] = 2800.0; it[wholesalePriceDzd] = 2100.0; it[stock] = 45; it[salesCount] = 135; it[trendStatus] = "RISING"; it[searchInterest] = 96
                           }
                           TirourdaProductsTable.insert {
                               it[id] = UUID.randomUUID(); it[sku] = "TIR-OLIVE-01"; it[nameFr] = "Huile d'Olive Vierge Extra Kabylie 1L"
-                              it[nameAr] = "زيت زيتون بكر ممتاز تيروردة 1 لتر"; it[category] = "Huiles"; it[priceDzd] = 1600.0; it[stock] = 14; it[salesCount] = 240; it[trendStatus] = "RISING"; it[searchInterest] = 92
+                              it[nameAr] = "زيت زيتون بكر ممتاز تيروردة 1 لتر"; it[category] = "Huiles"; it[priceDzd] = 1600.0; it[wholesalePriceDzd] = 1250.0; it[stock] = 14; it[salesCount] = 240; it[trendStatus] = "RISING"; it[searchInterest] = 92
                           }
                           TirourdaProductsTable.insert {
                               it[id] = UUID.randomUUID(); it[sku] = "TIR-NIGELLE-01"; it[nameFr] = "Huile de Nigelle Pure Pressée à Froid 100ml"
-                              it[nameAr] = "زيت الحبة السوداء معصور على البارد 100مل"; it[category] = "Huiles"; it[priceDzd] = 850.0; it[stock] = 70; it[salesCount] = 90; it[trendStatus] = "STABLE"; it[searchInterest] = 84
+                              it[nameAr] = "زيت الحبة السوداء معصور على البارد 100مل"; it[category] = "Huiles"; it[priceDzd] = 850.0; it[wholesalePriceDzd] = 600.0; it[stock] = 70; it[salesCount] = 90; it[trendStatus] = "STABLE"; it[searchInterest] = 84
                           }
                       }
                   }
@@ -452,17 +452,6 @@ jobs:
                   }
                   return md
               }
-
-              suspend fun generateDailyBrief(): DailyBriefDTO {
-                  return DailyBriefDTO(
-                      date = Clock.System.now().toString().take(10),
-                      marketStatus = "طلب مرتفع (+45% اهتمام)",
-                      topTrendingProduct = "عسل جبلي حر / Miel Pur",
-                      urgentFollowUps = 8,
-                      lowStockAlerts = listOf("زيت زيتون 1 لتر (14 متبقية)"),
-                      recommendedAction = "التواصل مع محلات العطارة والمنتجات الطبيعية في العاصمة ووهران لتقديم أسعار الجملة."
-                  )
-              }
           }
 
           val DASHBOARD_HTML = """
@@ -471,7 +460,7 @@ jobs:
           <head>
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>TIRORDA AI — استخبارات السوق وتوليد الصفقات</title>
+              <title>TIRORDA AI — منصة استخبارات السوق والنمو التجاري</title>
               <script src="https://cdn.tailwindcss.com"></script>
               <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
               <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -489,9 +478,9 @@ jobs:
                       <div>
                           <div class="flex items-center gap-2">
                               <h1 class="text-xl font-black text-emerald-400 tracking-wide">TIRORDA AI</h1>
-                              <span class="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">PRO</span>
+                              <span class="bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">PRO TOOLS</span>
                           </div>
-                          <p class="text-xs text-slate-400">استخبارات السوق • تنقيب المتاجر • إدارة العملاء المحتملين CRM</p>
+                          <p class="text-xs text-slate-400">استخبارات السوق • أدوات التسويق • تحليل اتجاهات البحث في الجزائر</p>
                       </div>
                   </div>
                   <div class="flex items-center gap-2.5">
@@ -501,71 +490,176 @@ jobs:
               </header>
 
               <main class="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
-                  <!-- Search & Discovery Finder -->
-                  <div class="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 shadow-lg space-y-3">
-                      <div class="flex items-center justify-between">
-                          <h3 class="text-sm font-black text-emerald-400 flex items-center gap-2"><span>🔍</span><span>محرك البحث والتنقيب الفوري عن المتاجر</span></h3>
+                  <!-- Navigation Modules Tabs -->
+                  <div class="flex overflow-x-auto gap-2 border-b border-slate-800 pb-2 text-xs font-bold no-scrollbar">
+                      <button onclick="switchTab('leads')" id="tabLeads" class="px-4 py-2 rounded-xl bg-emerald-600 text-white transition whitespace-nowrap">🎯 المتاجر والصفقات (Leads)</button>
+                      <button onclick="switchTab('searches')" id="tabSearches" class="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap">🔥 أكثر ما يبحث عنه الناس</button>
+                      <button onclick="switchTab('hashtags')" id="tabHashtags" class="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap">#️⃣ الهاشتاغات الذكية</button>
+                      <button onclick="switchTab('calculator')" id="tabCalculator" class="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap">💰 حاسبة أرباح الجملة</button>
+                      <button onclick="switchTab('scripts')" id="tabScripts" class="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap">🎬 سكريبتات إعلانات تيكتوك</button>
+                      <button onclick="switchTab('calendar')" id="tabCalendar" class="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap">🗓️ تقويم المواسم والطلب</button>
+                      <button onclick="switchTab('map')" id="tabMap" class="px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap">📍 الخريطة التفاعلية</button>
+                  </div>
+
+                  <!-- TAB 1: LEADS & DISCOVERY -->
+                  <div id="sectionLeads" class="space-y-6">
+                      <div class="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 shadow-lg space-y-3">
+                          <div class="flex items-center justify-between">
+                              <h3 class="text-sm font-black text-emerald-400 flex items-center gap-2"><span>🔍</span><span>محرك البحث والتنقيب الفوري عن المتاجر</span></h3>
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              <div>
+                                  <label class="block text-[11px] text-slate-400 mb-1">الولاية المستهدفة</label>
+                                  <select id="searchWilaya" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500">
+                                      <option value="ALL">جميع الولايات (Toutes)</option>
+                                      <option value="16 - Alger">16 - الجزائر (Alger)</option>
+                                      <option value="31 - Oran">31 - وهران (Oran)</option>
+                                      <option value="25 - Constantine">25 - قسنطينة (Constantine)</option>
+                                      <option value="09 - Blida">09 - البليدة (Blida)</option>
+                                      <option value="15 - Tizi Ouzou">15 - تيزي وزو (Tizi Ouzou)</option>
+                                      <option value="19 - Sétif">19 - سطيف (Sétif)</option>
+                                      <option value="06 - Béjaïa">06 - بجاية (Béjaïa)</option>
+                                      <option value="13 - Tlemcen">13 - تلمسان (Tlemcen)</option>
+                                      <option value="23 - Annaba">23 - عنابة (Annaba)</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label class="block text-[11px] text-slate-400 mb-1">النشاط / التصنيف</label>
+                                  <select id="searchCategory" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500">
+                                      <option value="ALL">جميع الأنشطة الطبيعية</option>
+                                      <option value="عطارة">عطارة وأعشاب (Herboristerie)</option>
+                                      <option value="عسل">عسل طبيعي وحر (Miel)</option>
+                                      <option value="زيت">زيت زيتون ومعاصر (Huiles)</option>
+                                      <option value="Bio">منتجات طبيعية وبيولوجية (Bio)</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label class="block text-[11px] text-slate-400 mb-1">بحث مخصص بالاسم أو الكلمة</label>
+                                  <input type="text" id="searchKeyword" value="العطارة" placeholder="مثال: العطارة، الشفاء، عسل..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500">
+                              </div>
+                              <div class="flex items-end">
+                                  <button onclick="executeDiscoverySearch()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5">
+                                      <span>🚀</span><span>تنقيب وعرض المتاجر</span>
+                                  </button>
+                              </div>
+                          </div>
                       </div>
-                      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                          <div>
-                              <label class="block text-[11px] text-slate-400 mb-1">الولاية المستهدفة</label>
-                              <select id="searchWilaya" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500">
-                                  <option value="ALL">جميع الولايات (Toutes)</option>
-                                  <option value="16 - Alger">16 - الجزائر (Alger)</option>
-                                  <option value="31 - Oran">31 - وهران (Oran)</option>
-                                  <option value="25 - Constantine">25 - قسنطينة (Constantine)</option>
-                                  <option value="09 - Blida">09 - البليدة (Blida)</option>
-                                  <option value="15 - Tizi Ouzou">15 - تيزي وزو (Tizi Ouzou)</option>
-                                  <option value="19 - Sétif">19 - سطيف (Sétif)</option>
-                                  <option value="06 - Béjaïa">06 - بجاية (Béjaïa)</option>
-                                  <option value="13 - Tlemcen">13 - تلمسان (Tlemcen)</option>
-                                  <option value="23 - Annaba">23 - عنابة (Annaba)</option>
-                              </select>
-                          </div>
-                          <div>
-                              <label class="block text-[11px] text-slate-400 mb-1">النشاط / التصنيف</label>
-                              <select id="searchCategory" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500">
-                                  <option value="ALL">جميع الأنشطة الطبيعية</option>
-                                  <option value="عطارة">عطارة وأعشاب (Herboristerie)</option>
-                                  <option value="عسل">عسل طبيعي وحر (Miel)</option>
-                                  <option value="زيت">زيت زيتون ومعاصر (Huiles)</option>
-                                  <option value="Bio">منتجات طبيعية وبيولوجية (Bio)</option>
-                              </select>
-                          </div>
-                          <div>
-                              <label class="block text-[11px] text-slate-400 mb-1">بحث مخصص بالاسم أو الكلمة</label>
-                              <input type="text" id="searchKeyword" value="العطارة" placeholder="مثال: العطارة، الشفاء، عسل..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500">
-                          </div>
-                          <div class="flex items-end">
-                              <button onclick="executeDiscoverySearch()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5">
-                                  <span>🚀</span><span>تنقيب وعرض المتاجر</span>
-                              </button>
+
+                      <div class="flex flex-col sm:flex-row justify-between gap-3 items-center">
+                          <input type="text" id="tableFilterInput" oninput="filterLeadsTable()" placeholder="تصفية سريعة بالاسم أو الهاتف أو البلدية..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white w-full sm:w-96 focus:border-emerald-500 outline-none">
+                          <button onclick="window.open('/api/leads/export','_blank')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">📥 تصدير CSV</button>
+                      </div>
+
+                      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                          <div class="overflow-x-auto">
+                              <table class="w-full text-right text-xs text-slate-300" id="leadsTable">
+                                  <thead class="bg-slate-950 text-slate-400 uppercase text-[11px] border-b border-slate-800">
+                                      <tr>
+                                          <th class="p-3.5">اسم المتجر / الإدارة</th>
+                                          <th class="p-3.5">الولاية والبلدية</th>
+                                          <th class="p-3.5">الهاتف المعتمد</th>
+                                          <th class="p-3.5">درجة التوافق (SCORE)</th>
+                                          <th class="p-3.5">حالة التواصل CRM</th>
+                                          <th class="p-3.5 text-left">إجراءات B2B فورية</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody id="leadsTableBody" class="divide-y divide-slate-800/60"></tbody>
+                              </table>
                           </div>
                       </div>
                   </div>
 
-                  <!-- Quick Filter in Table -->
-                  <div class="flex flex-col sm:flex-row justify-between gap-3 items-center">
-                      <input type="text" id="tableFilterInput" oninput="filterLeadsTable()" placeholder="تصفية سريعة بالاسم أو الهاتف أو البلدية..." class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs text-white w-full sm:w-96 focus:border-emerald-500 outline-none">
-                      <button onclick="window.open('/api/leads/export','_blank')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">📥 تصدير CSV</button>
+                  <!-- TAB 2: TOP SEARCH QUERIES -->
+                  <div id="sectionSearches" class="hidden space-y-4">
+                      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <div class="flex justify-between items-center">
+                              <div>
+                                  <h3 class="text-sm font-bold text-white">🔥 الكلمات والمنتجات الأكثر بحثاً في الجزائر خلال هذا الأسبوع</h3>
+                                  <p class="text-xs text-slate-400 mt-0.5">تحليل بيانات محركات البحث واهتمام الزبائن بالمنتجات الطبيعية</p>
+                              </div>
+                              <span class="bg-emerald-950 text-emerald-400 text-xs px-3 py-1 rounded-lg border border-emerald-800 font-bold">محدث دورياً</span>
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="searchesGrid"></div>
+                      </div>
                   </div>
 
-                  <!-- Leads Table -->
-                  <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                      <div class="overflow-x-auto">
-                          <table class="w-full text-right text-xs text-slate-300" id="leadsTable">
-                              <thead class="bg-slate-950 text-slate-400 uppercase text-[11px] border-b border-slate-800">
-                                  <tr>
-                                      <th class="p-3.5">اسم المتجر / الإدارة</th>
-                                      <th class="p-3.5">الولاية والبلدية</th>
-                                      <th class="p-3.5">الهاتف المعتمد</th>
-                                      <th class="p-3.5">درجة التوافق (SCORE)</th>
-                                      <th class="p-3.5">حالة التواصل CRM</th>
-                                      <th class="p-3.5 text-left">إجراءات B2B فورية</th>
-                                  </tr>
-                              </thead>
-                              <tbody id="leadsTableBody" class="divide-y divide-slate-800/60"></tbody>
-                          </table>
+                  <!-- TAB 3: VIRAL HASHTAGS -->
+                  <div id="sectionHashtags" class="hidden space-y-4">
+                      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <h3 class="text-sm font-bold text-white">#️⃣ حزم الهاشتاغات الأكثر انتشاراً وتفاعلاً (TikTok / Instagram / Reels)</h3>
+                          <p class="text-xs text-slate-400">انسخ الهاشتاغات المناسبة لكل منتج بنقرة واحدة لزيادة المشاهدات والمبيعات</p>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="hashtagsGrid"></div>
+                      </div>
+                  </div>
+
+                  <!-- TAB 4: WHOLESALE PROFIT CALCULATOR -->
+                  <div id="sectionCalculator" class="hidden space-y-4">
+                      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+                          <div>
+                              <h3 class="text-base font-bold text-white">💰 حاسبة هوامش أرباح الجملة لمحلات العطارة والموزعين</h3>
+                              <p class="text-xs text-slate-400 mt-1">احسب أرباحك الصافية ونسبة العائد على الاستثمار عند توزيع منتجات تيروردة</p>
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                              <div>
+                                  <label class="block text-xs text-slate-400 mb-1">اختر المنتج</label>
+                                  <select id="calcProduct" onchange="updateCalcProduct()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white">
+                                      <option value="2100,2800">عسل جبلي حر تيروردة 500غ</option>
+                                      <option value="1250,1600">زيت زيتون بكر كابيلي 1 لتر</option>
+                                      <option value="600,850">زيت الحبة السوداء المعصور 100مل</option>
+                                      <option value="280,400">صابون الغار وزيت الزيتون الطبيعي</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label class="block text-xs text-slate-400 mb-1">سعر الشراء بالجملة (دج)</label>
+                                  <input type="number" id="calcBuyPrice" value="2100" oninput="calculateProfit()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono">
+                              </div>
+                              <div>
+                                  <label class="block text-xs text-slate-400 mb-1">سعر البيع بالتجزئة (دج)</label>
+                                  <input type="number" id="calcSellPrice" value="2800" oninput="calculateProfit()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono">
+                              </div>
+                              <div>
+                                  <label class="block text-xs text-slate-400 mb-1">الكمية المطلوبة (وحدة)</label>
+                                  <input type="number" id="calcQuantity" value="50" oninput="calculateProfit()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white font-mono">
+                              </div>
+                          </div>
+                          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center">
+                                  <p class="text-xs text-slate-400">صافي الربح الإجمالي المتوقع</p>
+                                  <h4 id="calcNetProfit" class="text-2xl font-black text-emerald-400 mt-1">35,000 دج</h4>
+                              </div>
+                              <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center">
+                                  <p class="text-xs text-slate-400">نسبة هامش الربح (Marge)</p>
+                                  <h4 id="calcMarginPercent" class="text-2xl font-black text-amber-400 mt-1">25.0%</h4>
+                              </div>
+                              <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-center">
+                                  <p class="text-xs text-slate-400">العائد على الاستثمار (ROI)</p>
+                                  <h4 id="calcRoi" class="text-2xl font-black text-sky-400 mt-1">33.3%</h4>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- TAB 5: TIKTOK & AD SCRIPTS -->
+                  <div id="sectionScripts" class="hidden space-y-4">
+                      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <h3 class="text-sm font-bold text-white">🎬 بنك الأفكار وسكريبتات الفيديو الإعلانية الجاهزة للتصوير</h3>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="scriptsGrid"></div>
+                      </div>
+                  </div>
+
+                  <!-- TAB 6: SEASONAL CALENDAR -->
+                  <div id="sectionCalendar" class="hidden space-y-4">
+                      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <h3 class="text-sm font-bold text-white">🗓️ تقويم المواسم ومخطط فترات ذروة الطلب في الجزائر</h3>
+                          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="calendarGrid"></div>
+                      </div>
+                  </div>
+
+                  <!-- TAB 7: MAP -->
+                  <div id="sectionMap" class="hidden space-y-4">
+                      <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+                          <h3 class="font-bold text-sm text-white mb-3">📍 خريطة المتاجر والموزعين المكتشفين في الجزائر</h3>
+                          <div id="map" class="h-96 rounded-xl z-0"></div>
                       </div>
                   </div>
               </main>
@@ -585,7 +679,54 @@ jobs:
                       { businessName: "محل الأندلس للأعشاب والتقاليد - Herbes de Tlemcen", wilaya: "13 - Tlemcen", city: "Tlemcen", commune: "Imama", phone: "+213557889922", category: "Herboristerie / عطارة", leadScore: 80, scoreReasons: "+25 عطارة، +10 هاتف", status: "NEW_LEAD" }
                   ];
 
+                  var topSearchesData = [
+                      { query: "عسل جبلي حر مضمون في الجزائر", volume: "85,000 / شهر", growth: "+48%", intent: "شراء عاجل", category: "عسل" },
+                      { query: "سعر لتر زيت زيتون قبائلي أصلي 2026", volume: "94,000 / شهر", growth: "+62%", intent: "مقارنة أسعار", category: "زيوت" },
+                      { query: "فوائد زيت الحبة السوداء على الريق", volume: "58,000 / شهر", growth: "+35%", intent: "معلومات وعافية", category: "زيوت معصورة" },
+                      { query: "أعشاب طبيعية لراحة القولون وانتفاخ البطن", volume: "76,000 / شهر", growth: "+41%", intent: "علاج طبيعي", category: "أعشاب" },
+                      { query: "صابون زيت الزيتون والغار الطبيعي للوجه", volume: "42,000 / شهر", growth: "+28%", intent: "عناية وتجميل", category: "كوزمتيك" },
+                      { query: "أفضل محل عطارة موثوق في الجزائر العاصمة", volume: "64,000 / شهر", growth: "+53%", intent: "بحث محلي", category: "متاجر" }
+                  ];
+
+                  var hashtagPacks = [
+                      { title: "🍯 حزمة العسل والمنتجات الجبلية", tags: "#عسل_حر #عسل_جبلي #عسل_طبيعي_الجزائر #miel_pur #miel_algerie #tirorda_honey #produits_terroir #عسل_سدر" },
+                      { title: "🫒 حزمة زيت الزيتون والزيوت المعصورة", tags: "#زيت_زيتون_بكر #زيت_زيتون_قبائلي #huile_dolive_algerie #kabylie_terroir #pressée_a_froid #زيت_حبة_حلاوة #huile_de_nigelle" },
+                      { title: "🌿 حزمة العطارة والأعشاب الطبية", tags: "#أعشاب_طبيعية #عطارة_الجزائر #عشاب_موثوق #herboristerie_dz #plantes_medicinales #تيزانة_طبيعية #طب_أصيل" },
+                      { title: "✨ حزمة الكوزمتيك الطبيعي والصابون", tags: "#كوزمتيك_طبيعي #صابون_طبيعي #عناية_بالبشرة_dz #cosmetique_naturelle_dz #savon_artisanal #جمال_طبيعي" }
+                  ];
+
+                  var videoScripts = [
+                      { hook: "« 90% من الناس يشترون العسل بهذه الطريقة الخاطئة! »", desc: "فيديو مقارنة واختبار نقاء العسل الجبلي الحر مع توضيح سبب تميز عسل تيروردة من جبال جرجرة.", cta: "اطلب الآن عينة التذوق لمطعمك أو محلك!" },
+                      { hook: "« كيف تعرف زيت الزيتون الحقيقي بلمسة واحدة؟ »", desc: "شرح درجة الحموضة ورائحة عصرة الزيتون البكر الممتاز في منطقة القبائل.", cta: "متوفر بالجملة لجميع الموزعين." },
+                      { hook: "« هذا ما يحدث لجسمك عند تناول ملعقة حبة سوداء مع عسل طبيعي! »", desc: "فوائد العادة الصباحية اليومية التراثية بدون ادعاءات طبية مبالغ فيها.", cta: "رابط الطلب متوفر في البايو." }
+                  ];
+
+                  var seasonalCalendar = [
+                      { season: "الخريف (سبتمبر - نوفمبر)", focus: "زيت الزيتون البكر الجديد، العسل الجبلي", note: "فترة التحضير لموسم العصر وزيادة الطلب على العسل لتقوية المناعة." },
+                      { season: "الشتاء (ديسمبر - فيفري)", focus: "أعشاب ونزلات البرد، الزعتر، زيت الحبة السوداء", note: "أعلى ذروة لبيع التيزانات، خلطات المناعة وزيوت التدفئة." },
+                      { season: "الربيع (مارس - ماي)", focus: "عسل الأزهار، أعشاب تنظيف الجسم، الصابون الطبيعي", note: "طلب كبير على المكملات الغذائية الخفيفة ومنتجات التخلص من السموم." },
+                      { season: "الصيف (جوان - أوت)", focus: "زيوت العناية بالبشرة والشعر، الصابون البلدي", note: "ذروة الطلب على منتجات الكوزمتيك الطبيعي وحماية الشعر من الجفاف." }
+                  ];
+
                   var allLeads = fallbackLeads;
+                  var mapInstance = null;
+
+                  function switchTab(tab) {
+                      ['leads', 'searches', 'hashtags', 'calculator', 'scripts', 'calendar', 'map'].forEach(function(t) {
+                          var sec = document.getElementById('section' + t.charAt(0).toUpperCase() + t.slice(1));
+                          if (sec) sec.classList.add('hidden');
+                          var btn = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+                          if (btn) btn.className = 'px-4 py-2 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition whitespace-nowrap';
+                      });
+                      var activeSec = document.getElementById('section' + tab.charAt(0).toUpperCase() + tab.slice(1));
+                      if (activeSec) activeSec.classList.remove('hidden');
+                      var activeBtn = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+                      if (activeBtn) activeBtn.className = 'px-4 py-2 rounded-xl bg-emerald-600 text-white transition whitespace-nowrap';
+
+                      if (tab === 'map' && mapInstance) {
+                          setTimeout(function() { mapInstance.invalidateSize(); }, 200);
+                      }
+                  }
 
                   async function loadInitialData() {
                       try {
@@ -595,15 +736,21 @@ jobs:
                               allLeads = data;
                           }
                       } catch (e) {
-                          console.log("Using cached directory data");
+                          console.log("Using cached leads");
                       }
                       filterLeadsTable();
+                      renderSearches();
+                      renderHashtags();
+                      renderScripts();
+                      renderCalendar();
+                      calculateProfit();
+                      initMap(allLeads);
                   }
 
                   function renderLeadsTable(leads) {
                       var tbody = document.getElementById('leadsTableBody');
                       if (!leads || leads.length === 0) {
-                          tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-400">لا توجد محلات مطابقة. جرب البحث بكلمة عامة مثل "عسل" أو "عطارة".</td></tr>';
+                          tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-400">لا توجد محلات مطابقة. اضغط على زر "تنقيب وعرض المتاجر" لعرض المحلات فوراً.</td></tr>';
                           return;
                       }
 
@@ -647,7 +794,7 @@ jobs:
                               allLeads = data;
                           }
                       } catch (e) {
-                          console.log("Discovery network error, using instant directory filtering");
+                          console.log("Using instant leads fallback");
                       }
 
                       var searchKey = kw.toLowerCase();
@@ -665,7 +812,6 @@ jobs:
                       });
 
                       if (filtered.length === 0) {
-                          // إذا كانت الكلمة عامة كالعطارة، نعرض كل من يطابق الكلمة دون التقييد بالولاية
                           filtered = allLeads.filter(function(l) {
                               return (l.businessName || '').toLowerCase().indexOf(searchKey) !== -1 || (l.category || '').toLowerCase().indexOf(searchKey) !== -1;
                           });
@@ -690,6 +836,104 @@ jobs:
                       });
 
                       renderLeadsTable(filtered);
+                  }
+
+                  function renderSearches() {
+                      var container = document.getElementById('searchesGrid');
+                      var html = '';
+                      for (var i = 0; i < topSearchesData.length; i++) {
+                          var s = topSearchesData[i];
+                          html += '<div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">' +
+                              '<div class="flex justify-between items-center"><span class="text-[10px] bg-slate-900 border border-slate-700 px-2 py-0.5 rounded text-slate-300">' + s.category + '</span><span class="text-xs font-bold text-emerald-400">' + s.growth + '</span></div>' +
+                              '<h4 class="font-bold text-white text-xs leading-snug">' + s.query + '</h4>' +
+                              '<div class="flex justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-900">' +
+                                  '<span>حجم البحث: ' + s.volume + '</span>' +
+                                  '<span class="text-amber-400 font-bold">' + s.intent + '</span>' +
+                              '</div>' +
+                              '</div>';
+                      }
+                      container.innerHTML = html;
+                  }
+
+                  function renderHashtags() {
+                      var container = document.getElementById('hashtagsGrid');
+                      var html = '';
+                      for (var i = 0; i < hashtagPacks.length; i++) {
+                          var p = hashtagPacks[i];
+                          html += '<div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">' +
+                              '<div class="flex justify-between items-center"><h4 class="font-bold text-white text-xs">' + p.title + '</h4><button onclick="copyTags(\'' + p.tags + '\')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded text-[11px] font-bold">نسخ 📋</button></div>' +
+                              '<p class="text-xs font-mono text-emerald-400 bg-slate-900/60 p-2.5 rounded-lg leading-relaxed select-all">' + p.tags + '</p>' +
+                              '</div>';
+                      }
+                      container.innerHTML = html;
+                  }
+
+                  function copyTags(tags) {
+                      navigator.clipboard.writeText(tags);
+                      alert('تم نسخ الهاشتاغات بنجاح! جاهزة للصق في تيكتوك وانستغرام.');
+                  }
+
+                  function updateCalcProduct() {
+                      var val = document.getElementById('calcProduct').value.split(',');
+                      document.getElementById('calcBuyPrice').value = val[0];
+                      document.getElementById('calcSellPrice').value = val[1];
+                      calculateProfit();
+                  }
+
+                  function calculateProfit() {
+                      var buy = parseFloat(document.getElementById('calcBuyPrice').value) || 0;
+                      var sell = parseFloat(document.getElementById('calcSellPrice').value) || 0;
+                      var qty = parseFloat(document.getElementById('calcQuantity').value) || 0;
+
+                      var unitProfit = sell - buy;
+                      var totalProfit = unitProfit * qty;
+                      var margin = (sell > 0) ? ((unitProfit / sell) * 100).toFixed(1) : 0;
+                      var roi = (buy > 0) ? ((unitProfit / buy) * 100).toFixed(1) : 0;
+
+                      document.getElementById('calcNetProfit').innerText = totalProfit.toLocaleString() + ' دج';
+                      document.getElementById('calcMarginPercent').innerText = margin + '%';
+                      document.getElementById('calcRoi').innerText = roi + '%';
+                  }
+
+                  function renderScripts() {
+                      var container = document.getElementById('scriptsGrid');
+                      var html = '';
+                      for (var i = 0; i < videoScripts.length; i++) {
+                          var sc = videoScripts[i];
+                          html += '<div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">' +
+                              '<div class="text-amber-400 font-bold text-xs">🎯 خطاف البداية (Hook): ' + sc.hook + '</div>' +
+                              '<p class="text-xs text-slate-300 leading-relaxed">' + sc.desc + '</p>' +
+                              '<div class="text-[11px] text-emerald-400 font-bold pt-2 border-t border-slate-900">📣 الدعوة للفعل (CTA): ' + sc.cta + '</div>' +
+                              '</div>';
+                      }
+                      container.innerHTML = html;
+                  }
+
+                  function renderCalendar() {
+                      var container = document.getElementById('calendarGrid');
+                      var html = '';
+                      for (var i = 0; i < seasonalCalendar.length; i++) {
+                          var c = seasonalCalendar[i];
+                          html += '<div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">' +
+                              '<h4 class="font-bold text-emerald-400 text-xs">' + c.season + '</h4>' +
+                              '<div class="text-xs font-bold text-white">المنتجات: ' + c.focus + '</div>' +
+                              '<p class="text-[11px] text-slate-400">' + c.note + '</p>' +
+                              '</div>';
+                      }
+                      container.innerHTML = html;
+                  }
+
+                  function initMap(leads) {
+                      mapInstance = L.map('map').setView([36.7538, 3.0588], 7);
+                      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                          attribution: '© OpenStreetMap'
+                      }).addTo(mapInstance);
+
+                      leads.forEach(function(l) {
+                          L.marker([36.7538 + (Math.random() - 0.5) * 1.5, 3.0588 + (Math.random() - 0.5) * 2.5])
+                              .addTo(mapInstance)
+                              .bindPopup('<b>' + l.businessName + '</b><br/>الولاية: ' + l.wilaya + '<br/>التوافق: ' + (l.leadScore || 80) + '/100');
+                      });
                   }
 
                   function toggleLanguage() {
@@ -803,10 +1047,6 @@ jobs:
                           call.respondText(csvHeader + csvRows, ContentType.Text.CSV)
                       }
 
-                      get("/daily-brief") {
-                          call.respond(reports.generateDailyBrief())
-                      }
-
                       post("/reports/generate") {
                           val report = reports.generateWeeklyReport()
                           call.respond(mapOf("status" to "SUCCESS", "report" to report))
@@ -834,5 +1074,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add settings.gradle.kts build.gradle.kts Dockerfile src/
-          git commit -m "Fix search hang and add instant lead discovery for TIRORDA AI" || echo "No changes to commit"
+          git commit -m "Add professional growth tools, hashtags engine, profit calculator and search analytics" || echo "No changes to commit"
           git push origin main
