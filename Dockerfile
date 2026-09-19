@@ -5,7 +5,7 @@ RUN gradle installDist --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=build /home/gradle/src/build/install/aroma-intel /app
+COPY --from=build /home/gradle/src/build/install/tirorda-ai /app
 EXPOSE 8080
 ENV PORT=8080
-ENTRYPOINT ["/app/bin/aroma-intel"]
+ENTRYPOINT ["/app/bin/tirorda-ai"]

@@ -1,1 +1,1 @@
-rootProject.name = "aroma-intel"
+rootProject.name = "tirorda-ai"
