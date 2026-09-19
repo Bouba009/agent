@@ -119,7 +119,7 @@ jobs:
           ENTRYPOINT ["/app/bin/tirorda-ai"]
           EOF
 
-          # 4. بناء الكود البرمجي الشامل لتيروردة Application.kt
+          # 4. بناء الكود البرمجي الشامل لتيروردة Application.kt مع تصحيح التعارض
           cat << 'EOF' > src/main/kotlin/com/tirorda/ai/Application.kt
           package com.tirorda.ai
 
@@ -148,7 +148,6 @@ jobs:
           import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
           import org.jetbrains.exposed.sql.transactions.transaction
           import org.slf4j.LoggerFactory
-          import java.net.URLEncoder
           import java.util.*
           import kotlin.math.min
           import kotlin.time.Duration.Companion.hours
@@ -164,8 +163,6 @@ jobs:
               val aiBaseUrl: String = System.getenv("AI_BASE_URL") ?: "https://api.openai.com/v1"
               val aiApiKey: String = System.getenv("AI_API_KEY") ?: ""
               val aiModel: String = System.getenv("AI_MODEL") ?: "gpt-4o-mini"
-              val googlePlacesApiKey: String = System.getenv("GOOGLE_PLACES_API_KEY") ?: ""
-              val wooCommerceUrl: String = System.getenv("WOOCOMMERCE_URL") ?: ""
               val tirourdaPhone: String = System.getenv("TIRORDA_PHONE") ?: "+213555001122"
               val tirourdaEmail: String = System.getenv("TIRORDA_EMAIL") ?: "pro@tirorda.com"
           }
@@ -232,7 +229,7 @@ jobs:
               override val primaryKey = PrimaryKey(id)
           }
 
-          // جداول تيروردة الجديدة المخصصة للـ Leads و الـ CRM و المنتجات
+          // تم تصحيح leadSource لتفادي التعارض مع ColumnSet.source
           object LeadsTable : Table("leads") {
               val id = uuid("id")
               val businessId = uuid("business_id").references(BusinessesTable.id)
@@ -248,7 +245,7 @@ jobs:
               val website = text("website").nullable()
               val instagram = varchar("instagram", 100).nullable()
               val facebook = varchar("facebook", 100).nullable()
-              val source = varchar("source", 100).default("Market Discovery")
+              val leadSource = varchar("source", 100).default("Market Discovery")
               val sourceUrl = text("source_url").nullable()
               val leadScore = integer("lead_score").default(50)
               val scoreReasons = text("score_reasons").default("Base prospect")
@@ -456,7 +453,6 @@ jobs:
                               nid
                           }
 
-                          // تسجيله كـ Lead مؤهل في نظام CRM الخاص بتيروردة
                           val leadExists = LeadsTable.selectAll().where { LeadsTable.businessId eq bId }.firstOrNull()
                           if (leadExists == null) {
                               val (score, reasons) = leadEngine.calculateScore(name, "Herbalist / Natural Store", phone, "contact@dz", "website", 4.7)
@@ -475,6 +471,7 @@ jobs:
                                   it[website] = "https://" + normName.replace(" ", "") + ".dz"
                                   it[instagram] = "@" + normName.replace(" ", "_")
                                   it[facebook] = "fb.com/" + normName.replace(" ", "")
+                                  it[leadSource] = "Market Discovery"
                                   it[leadScore] = score
                                   it[scoreReasons] = reasons
                                   it[status] = if (score >= 70) "QUALIFIED" else "NEW_LEAD"
@@ -524,24 +521,54 @@ jobs:
           suspend fun seedTirourdaCatalog() {
               dbQuery {
                   if (TirourdaProductsTable.selectAll().count() == 0L) {
-                      val products = listOf(
-                          TirourdaProductsTable.insert {
-                              it[id] = UUID.randomUUID(); it[sku] = "TIR-HONEY-01"; it[nameFr] = "Miel de Montagne Pur Tirourda 500g"
-                              it[nameAr] = "عسل جبلي حر تيروردة 500غ"; it[category] = "Miel"; it[priceDzd] = 2800.0; it[stock] = 45; it[salesCount] = 120; it[trendStatus] = "RISING"; it[searchInterest] = 95
-                          },
-                          TirourdaProductsTable.insert {
-                              it[id] = UUID.randomUUID(); it[sku] = "TIR-OLIVE-01"; it[nameFr] = "Huile d'Olive Vierge Extra Kabylie 1L"
-                              it[nameAr] = "زيت زيتون بكر ممتاز تيروردة 1 لتر"; it[category] = "Huiles"; it[priceDzd] = 1600.0; it[stock] = 12; it[salesCount] = 210; it[trendStatus] = "RISING"; it[searchInterest] = 90
-                          },
-                          TirourdaProductsTable.insert {
-                              it[id] = UUID.randomUUID(); it[sku] = "TIR-NIGELLE-01"; it[nameFr] = "Huile de Nigelle Pure Pressée à Froid 100ml"
-                              it[nameAr] = "زيت الحبة السوداء معصور على البارد 100مل"; it[category] = "Huiles"; it[priceDzd] = 850.0; it[stock] = 65; it[salesCount] = 85; it[trendStatus] = "STABLE"; it[searchInterest] = 82
-                          },
-                          TirourdaProductsTable.insert {
-                              it[id] = UUID.randomUUID(); it[sku] = "TIR-SOAP-01"; it[nameFr] = "Savon Artisanal Huile d'Olive & Laurier"
-                              it[nameAr] = "صابون طبيعي بزيت الزيتون والغار"; it[category] = "Cosmétiques"; it[priceDzd] = 400.0; it[stock] = 80; it[salesCount] = 40; it[trendStatus] = "OPPORTUNITY"; it[searchInterest] = 74
-                          }
-                      )
+                      TirourdaProductsTable.insert {
+                          it[id] = UUID.randomUUID()
+                          it[sku] = "TIR-HONEY-01"
+                          it[nameFr] = "Miel de Montagne Pur Tirourda 500g"
+                          it[nameAr] = "عسل جبلي حر تيروردة 500غ"
+                          it[category] = "Miel"
+                          it[priceDzd] = 2800.0
+                          it[stock] = 45
+                          it[salesCount] = 120
+                          it[trendStatus] = "RISING"
+                          it[searchInterest] = 95
+                      }
+                      TirourdaProductsTable.insert {
+                          it[id] = UUID.randomUUID()
+                          it[sku] = "TIR-OLIVE-01"
+                          it[nameFr] = "Huile d'Olive Vierge Extra Kabylie 1L"
+                          it[nameAr] = "زيت زيتون بكر ممتاز تيروردة 1 لتر"
+                          it[category] = "Huiles"
+                          it[priceDzd] = 1600.0
+                          it[stock] = 12
+                          it[salesCount] = 210
+                          it[trendStatus] = "RISING"
+                          it[searchInterest] = 90
+                      }
+                      TirourdaProductsTable.insert {
+                          it[id] = UUID.randomUUID()
+                          it[sku] = "TIR-NIGELLE-01"
+                          it[nameFr] = "Huile de Nigelle Pure Pressée à Froid 100ml"
+                          it[nameAr] = "زيت الحبة السوداء معصور على البارد 100مل"
+                          it[category] = "Huiles"
+                          it[priceDzd] = 850.0
+                          it[stock] = 65
+                          it[salesCount] = 85
+                          it[trendStatus] = "STABLE"
+                          it[searchInterest] = 82
+                      }
+                      TirourdaProductsTable.insert {
+                          it[id] = UUID.randomUUID()
+                          it[sku] = "TIR-SOAP-01"
+                          it[nameFr] = "Savon Artisanal Huile d'Olive & Laurier"
+                          it[nameAr] = "صابون طبيعي بزيت الزيتون والغار"
+                          it[category] = "Cosmétiques"
+                          it[priceDzd] = 400.0
+                          it[stock] = 80
+                          it[salesCount] = 40
+                          it[trendStatus] = "OPPORTUNITY"
+                          it[searchInterest] = 74
+                      }
                   }
               }
           }
@@ -1157,13 +1184,11 @@ jobs:
               }
 
               routing {
-                  // الواجهة التنفيذية لتيروردة
                   get("/") {
                       call.respondText(DASHBOARD_HTML, ContentType.Text.Html)
                   }
 
                   route("/api") {
-                      // 1. Leads CRM Endpoints
                       get("/leads") {
                           val status = call.request.queryParameters["status"]
                           val leads = dbQuery {
@@ -1187,7 +1212,6 @@ jobs:
                           call.respond(leads)
                       }
 
-                      // تصدير بصيغة CSV لفرق التسويق
                       get("/leads/export") {
                           val csvHeader = "BusinessName,Category,Wilaya,City,Phone,Email,LeadScore,Status\n"
                           val csvRows = dbQuery {
@@ -1202,11 +1226,12 @@ jobs:
                           call.respondText(csvHeader + csvRows, ContentType.Text.CSV)
                       }
 
-                      // مساعد كتابة العروض بالذكاء الاصطناعي لكل متجر
                       get("/leads/{id}/ai-brief") {
                           val leadId = call.parameters["id"]
                           val lead = dbQuery {
-                              LeadsTable.selectAll().where { LeadsTable.id eq UUID.fromString(leadId) }.firstOrNull()
+                              runCatching {
+                                  LeadsTable.selectAll().where { LeadsTable.id eq UUID.fromString(leadId) }.firstOrNull()
+                              }.getOrNull()
                           }
                           if (lead == null) {
                               call.respond(HttpStatusCode.NotFound, "Lead not found")
@@ -1214,17 +1239,16 @@ jobs:
                           }
 
                           val leadName = lead[LeadsTable.businessName]
-                          val prompt = "Create a B2B reseller pitch for Tirourda Mountain Honey and Olive Oil targeting $leadName, an herbalist/natural shop in Algeria. Include approach strategy and suggested short WhatsApp message."
+                          val prompt = "Create a B2B reseller pitch for Tirourda Mountain Honey and Olive Oil targeting " + leadName + ", an herbalist/natural shop in Algeria. Include approach strategy and suggested short WhatsApp message."
                           val pitch = aiEngine.generateAnalysis(prompt, "You are Tirourda's Head of B2B Wholesale Partnerships.")
 
                           call.respond(mapOf(
-                              "leadId" to leadId,
-                              "approachStrategy" to "Mettre en avant la pureté certifiée du miel de montagne Tirourda et les marges de distribution attractives.",
+                              "leadId" to (leadId ?: ""),
+                              "approachStrategy" to "Mettre en avant la purete certifiee du miel de montagne Tirourda et les marges de distribution attractives pour " + leadName + ".",
                               "suggestedMessage" to "Salam Alikoum, nous sommes les producteurs de la marque Tirourda (miel de montagne pur et huile d'olive vierge extra). Nous souhaiterions vous proposer nos conditions de distribution de gros adaptées à votre boutique."
                           ))
                       }
 
-                      // 2. Tirourda Products & Stocks
                       get("/products") {
                           val products = dbQuery {
                               TirourdaProductsTable.selectAll().map {
@@ -1240,7 +1264,6 @@ jobs:
                           call.respond(products)
                       }
 
-                      // 3. Trends & Opportunities
                       get("/trends") {
                           val list = dbQuery {
                               TrendsTable.selectAll().limit(10).map {
@@ -1250,12 +1273,10 @@ jobs:
                           call.respond(list)
                       }
 
-                      // 4. Daily Brief
                       get("/daily-brief") {
                           call.respond(reports.generateDailyBrief())
                       }
 
-                      // 5. Reports
                       get("/reports") {
                           val list = dbQuery {
                               ReportsTable.selectAll().orderBy(ReportsTable.createdAt to SortOrder.DESC).map {
@@ -1305,5 +1326,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add settings.gradle.kts build.gradle.kts Dockerfile src/
-          git commit -m "Transform project into TIRORDA AI Business Intelligence & Lead Generation Platform" || echo "No changes to commit"
+          git commit -m "Fix Exposed ColumnSet.source clash in LeadsTable for TIRORDA AI" || echo "No changes to commit"
           git push origin main
